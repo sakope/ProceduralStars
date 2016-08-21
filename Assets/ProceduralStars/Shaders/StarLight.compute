@@ -1,0 +1,89 @@
+﻿// Each #kernel tells which function to compile; you can have many kernels
+#pragma kernel Initialize
+#pragma kernel Iterator
+
+#include "UnityCG.cginc"
+#include "../Cgincs/Noise.cginc"
+
+struct ShadingObjectBuffer
+{
+    uint   id;
+    bool   isShooting;
+    float3 pos;
+    float3 dir;
+    float  power;
+    float4 color;
+    float  starSize;
+    float  hugeStarSize;
+    float  random;
+    float  twinkle;
+};
+
+RWStructuredBuffer<ShadingObjectBuffer> buf;
+
+float  deltaTime;
+float3 renderMaxArea;
+float3 renderMinArea;
+uint   shootStar;
+uint   shootId;
+uint   shootingStarCache;
+
+float3 RandomizePos(uint3 id)
+{
+    float3 pos = abs(rnd3(float2(id.x + 1 + deltaTime, id.x + 2 + deltaTime))) * (renderMaxArea - renderMinArea) + renderMinArea;
+    if (id.x < shootingStarCache)
+    {
+        float upperAreaHeight = (renderMaxArea.z - renderMinArea.z) / 2;
+        if (pos.z < renderMinArea.z + upperAreaHeight) pos.z += upperAreaHeight;
+    }
+    return pos;
+}
+
+float3 TilingPos(uint3 id)
+{
+    float3 pos = float3(renderMinArea.x + (renderMaxArea.x - buf[id.x].pos.x), 0, renderMinArea.z + (renderMaxArea.z - buf[id.x].pos.z));
+    return pos;
+}
+
+void Respawn(uint3 id)
+{
+    if (buf[id.x].isShooting)
+    {
+        buf[id.x].isShooting = false;
+        buf[id.x].pos = RandomizePos(id);
+    }
+    else
+    {
+        buf[id.x].pos = TilingPos(id);
+    }
+}
+
+[numthreads(16, 1, 1)]
+void Initialize(uint3 id : SV_DispatchThreadID)
+{
+    buf[id.x].random = rnd(buf[id.x].id.xx);
+    buf[id.x].isShooting = false;
+}
+
+[numthreads(16, 1, 1)]
+void Iterator(uint3 id : SV_DispatchThreadID)
+{
+    buf[id.x].pos += buf[id.x].dir * (buf[id.x].power * 0.001);
+    if (buf[id.x].pos.x > renderMaxArea.x || buf[id.x].pos.z > renderMaxArea.z || buf[id.x].pos.x < renderMinArea.x || buf[id.x].pos.z < renderMinArea.z)
+    {
+        Respawn(id);
+    }
+
+    if (shootStar == 1)
+    {
+        if(id.x == shootId)
+        {
+            buf[id.x].isShooting = true;
+        }
+    }
+
+    if (buf[id.x].isShooting == true)
+    {
+        buf[id.x].pos += float3(0.04, 0, -0.08);
+    }
+}
